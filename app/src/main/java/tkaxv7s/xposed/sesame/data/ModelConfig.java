@@ -1,9 +1,10 @@
 package tkaxv7s.xposed.sesame.data;
 
+import lombok.Data;
+import tkaxv7s.xposed.sesame.data.modelFieldExt.BooleanModelField;
+
 import java.io.Serializable;
 import java.util.Map;
-
-import lombok.Data;
 
 @Data
 public final class ModelConfig implements Serializable {
@@ -16,24 +17,27 @@ public final class ModelConfig implements Serializable {
 
     private String name;
 
+    private ModelGroup group;
+
+    private String icon;
+
     private final ModelFields fields = new ModelFields();
 
     public ModelConfig() {
         //dataType = TypeUtil.getTypeArgument(this.getClass().getGenericSuperclass(), 0);
     }
 
-    public ModelConfig(ModelTask modelTask) {
+    public ModelConfig(Model model) {
         this();
-        this.code = modelTask.getClass().getSimpleName();
-        this.name = modelTask.setName();
-        addFields(modelTask.setFields());
-    }
-
-    public void addFields(ModelFields newFields) {
-        fields.clear();
-        if (newFields != null) {
-            for (Map.Entry<String, ModelField> entry : newFields.entrySet()) {
-                ModelField modelField = entry.getValue();
+        this.code = model.getClass().getSimpleName();
+        this.name = model.getName();
+        this.group = model.getGroup();
+        BooleanModelField enableField = model.getEnableField();
+        fields.put(enableField.getCode(), enableField);
+        ModelFields modelFields = model.getFields();
+        if (modelFields != null) {
+            for (Map.Entry<String, ModelField<?>> entry : modelFields.entrySet()) {
+                ModelField<?> modelField = entry.getValue();
                 if (modelField != null) {
                     fields.put(modelField.getCode(), modelField);
                 }
@@ -45,7 +49,7 @@ public final class ModelConfig implements Serializable {
         return fields.containsKey(fieldCode);
     }
 
-    public ModelField getModelField(String fieldCode) {
+    public ModelField<?> getModelField(String fieldCode) {
         return fields.get(fieldCode);
     }
 
@@ -59,7 +63,7 @@ public final class ModelConfig implements Serializable {
     }*/
 
     @SuppressWarnings("unchecked")
-    public <T extends ModelField> T getModelFieldExt(String fieldCode) {
+    public <T extends ModelField<?>> T getModelFieldExt(String fieldCode) {
         return (T) fields.get(fieldCode);
     }
 }

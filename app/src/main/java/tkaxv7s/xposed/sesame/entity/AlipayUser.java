@@ -1,14 +1,13 @@
 package tkaxv7s.xposed.sesame.entity;
 
+import tkaxv7s.xposed.sesame.util.Log;
+import tkaxv7s.xposed.sesame.util.UserIdMap;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-
-import tkaxv7s.xposed.sesame.util.UserIdMap;
 
 public class AlipayUser extends IdAndName {
-    private static List<AlipayUser> list;
 
     public AlipayUser(String i, String n) {
         id = i;
@@ -16,24 +15,29 @@ public class AlipayUser extends IdAndName {
     }
 
     public static List<AlipayUser> getList() {
-        if (list == null || UserIdMap.shouldReload) {
-            list = new ArrayList<>();
-            Set<Map.Entry<String, String>> idSet = UserIdMap.getIdMap().entrySet();
-            for (Map.Entry<String, String> entry : idSet) {
-                list.add(new AlipayUser(entry.getKey(), entry.getValue()));
+        return getList(user -> true);
+    }
+
+    public static List<AlipayUser> getList(Filter filterFunc) {
+        List<AlipayUser> list = new ArrayList<>();
+        Map<String, UserEntity> userIdMap = UserIdMap.getUserMap();
+        for (Map.Entry<String, UserEntity> entry : userIdMap.entrySet()) {
+            UserEntity userEntity = entry.getValue();
+            try {
+                if (filterFunc.apply(userEntity)) {
+                    list.add(new AlipayUser(entry.getKey(), userEntity.getFullName()));
+                }
+            } catch (Throwable t) {
+                Log.printStackTrace(t);
             }
         }
         return list;
     }
 
-    public static void remove(String id) {
-        getList();
-        for (int i = 0; i < list.size(); i++) {
-            if (list.get(i).id.equals(id)) {
-                list.remove(i);
-                break;
-            }
-        }
+    public interface Filter {
+
+        Boolean apply(UserEntity user);
+
     }
 
 }

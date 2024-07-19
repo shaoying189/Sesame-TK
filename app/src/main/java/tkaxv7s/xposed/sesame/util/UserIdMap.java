@@ -1,154 +1,174 @@
 package tkaxv7s.xposed.sesame.util;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import com.fasterxml.jackson.core.type.TypeReference;
+import de.robv.android.xposed.XposedHelpers;
+import lombok.Getter;
+import tkaxv7s.xposed.sesame.entity.UserEntity;
+import tkaxv7s.xposed.sesame.hook.ApplicationHook;
+
+import java.lang.reflect.Field;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
-import lombok.Getter;
-import tkaxv7s.xposed.sesame.hook.ApplicationHook;
-import tkaxv7s.xposed.sesame.hook.FriendManager;
-
 public class UserIdMap {
-    private static final String TAG = UserIdMap.class.getSimpleName();
 
-    private static Map<String, String> idMap;
+    private static final Map<String, UserEntity> userMap = new ConcurrentHashMap<>();
 
-    public static boolean shouldReload = false;
+    private static final Map<String, UserEntity> readOnlyUserMap = Collections.unmodifiableMap(userMap);
 
     @Getter
     private static String currentUid = null;
 
-    private static boolean hasChanged = false;
-
-    public static void setCurrentUid(String uid) {
-        if (currentUid == null || !currentUid.equals(uid)) {
-            currentUid = uid;
-            FriendManager.fillUser(ApplicationHook.getClassLoader());
-        }
+    public static Map<String, UserEntity> getUserMap() {
+        return readOnlyUserMap;
     }
 
-    public static void putIdMapIfEmpty(String key, String value) {
-        if (key == null || key.isEmpty())
-            return;
-        if (!getIdMap().containsKey(key)) {
-            getIdMap().put(key, value);
-            hasChanged = true;
-        }
+    public static Set<String> getUserIdSet() {
+        return userMap.keySet();
     }
 
-    public static void putIdMap(String key, String value) {
-        if (key == null || key.isEmpty())
-            return;
-        if (getIdMap().containsKey(key)) {
-            if (!getIdMap().get(key).equals(value)) {
-                getIdMap().remove(key);
-                getIdMap().put(key, value);
-                hasChanged = true;
+    public static Collection<UserEntity> getUserEntityCollection() {
+        return userMap.values();
+    }
+
+    public synchronized static void initUser(String currentUserId) {
+        setCurrentUserId(currentUserId);
+        ApplicationHook.getMainHandler().post(() -> {
+            ClassLoader loader;
+            try {
+                loader = ApplicationHook.getClassLoader();
+            } catch (Exception e) {
+                Log.i("Error getting classloader");
+                return;
             }
-        } else {
-            getIdMap().put(key, value);
-            hasChanged = true;
-        }
-    }
-
-    public static void removeIdMap(String key) {
-        if (key == null || key.isEmpty())
-            return;
-        if (getIdMap().containsKey(key)) {
-            getIdMap().remove(key);
-            hasChanged = true;
-        }
-    }
-
-    public static void saveIdMap() {
-        if (hasChanged) {
-            StringBuilder sb = new StringBuilder();
-            Set<Map.Entry<String, String>> idSet = getIdMap().entrySet();
-            for (Map.Entry<String, String> entry : idSet) {
-                sb.append(entry.getKey());
-                sb.append(':');
-                sb.append(entry.getValue());
-                sb.append('\n');
-            }
-            hasChanged = !FileUtil.write2File(sb.toString(), FileUtil.getFriendIdMapFile());
-        }
-    }
-
-    public static String getNameById(String id) {
-        if (id == null || id.isEmpty())
-            return id;
-        if (getIdMap().containsKey(id)) {
-            String n = getIdMap().get(id);
-            int ind = n.lastIndexOf('(');
-            if (ind > 0)
-                n = n.substring(0, ind);
-            if (!n.equals("*"))
-                return n;
-        } else {
-            putIdMap(id, "*(*)");
-        }
-        return id;
-    }
-
-//    public static List<String> getIncompleteUnknownIds() {
-//        List<String> idList = new ArrayList<>();
-//        for (Map.Entry<String, String> entry : getIdMap().entrySet()) {
-//            if ("我".equals(entry.getValue())) {
-//                continue;
-//            }
-//            if (entry.getValue().split("\\|").length < 2) {
-//                idList.add(entry.getKey());
-//                // Log.i(TAG, "未知id: " + entry.getKey());
-//            }
-//        }
-//        return idList;
-//    }
-
-    public static Map<String, String> getIdMap() {
-        if (idMap == null || shouldReload) {
-            shouldReload = false;
-            idMap = new ConcurrentHashMap<>();
-            String str = FileUtil.readFromFile(FileUtil.getFriendIdMapFile());
-            if (str != null && !str.isEmpty()) {
-                try {
-                    String[] idSet = str.split("\n");
-                    for (String s : idSet) {
-                        // Log.i(TAG, s);
-                        int ind = s.indexOf(":");
-                        idMap.put(s.substring(0, ind), s.substring(ind + 1));
+            try {
+                UserIdMap.unload();
+                String selfId = ApplicationHook.getUserId();
+                Class<?> clsUserIndependentCache = loader.loadClass("com.alipay.mobile.socialcommonsdk.bizdata.UserIndependentCache");
+                Class<?> clsAliAccountDaoOp = loader.loadClass("com.alipay.mobile.socialcommonsdk.bizdata.contact.data.AliAccountDaoOp");
+                Object aliAccountDaoOp = XposedHelpers.callStaticMethod(clsUserIndependentCache, "getCacheObj", clsAliAccountDaoOp);
+                List<?> allFriends = (List<?>) XposedHelpers.callMethod(aliAccountDaoOp, "getAllFriends", new Object[0]);
+                if (!allFriends.isEmpty()) {
+                    Class<?> friendClass = allFriends.get(0).getClass();
+                    Field userIdField = XposedHelpers.findField(friendClass, "userId");
+                    Field accountField = XposedHelpers.findField(friendClass, "account");
+                    Field nameField = XposedHelpers.findField(friendClass, "name");
+                    Field nickNameField = XposedHelpers.findField(friendClass, "nickName");
+                    Field remarkNameField = XposedHelpers.findField(friendClass, "remarkName");
+                    Field friendStatusField = XposedHelpers.findField(friendClass, "friendStatus");
+                    UserEntity selfEntity = null;
+                    for (Object userObject : allFriends) {
+                        try {
+                            String userId = (String) userIdField.get(userObject);
+                            String account = (String) accountField.get(userObject);
+                            String name = (String) nameField.get(userObject);
+                            String nickName = (String) nickNameField.get(userObject);
+                            String remarkName = (String) remarkNameField.get(userObject);
+                            Integer friendStatus = (Integer) friendStatusField.get(userObject);
+                            UserEntity userEntity = new UserEntity(userId, account, friendStatus, name, nickName, remarkName);
+                            if (Objects.equals(selfId, userId)) {
+                                selfEntity = userEntity;
+                            }
+                            UserIdMap.add(userEntity);
+                        } catch (Throwable t) {
+                            Log.i("addUserObject err:");
+                            Log.printStackTrace(t);
+                        }
                     }
-                } catch (Throwable t) {
-                    Log.printStackTrace(TAG, t);
-                    idMap.clear();
+                    UserIdMap.saveSelf(selfEntity);
+                }
+                UserIdMap.save(selfId);
+            } catch (Throwable t) {
+                Log.i("checkUnknownId.run err:");
+                Log.printStackTrace(t);
+            }
+        });
+    }
+
+    public synchronized static void setCurrentUserId(String userId) {
+        if (userId == null || userId.isEmpty()) {
+            currentUid = null;
+            return;
+        }
+        currentUid = userId;
+    }
+
+    public static String getCurrentMaskName() {
+        return getMaskName(currentUid);
+    }
+
+    public static String getMaskName(String userId) {
+        UserEntity userEntity = userMap.get(userId);
+        if (userEntity == null) {
+            return null;
+        }
+        return userEntity.getMaskName();
+    }
+
+    public static String getFullName(String userId) {
+        UserEntity userEntity = userMap.get(userId);
+        if (userEntity == null) {
+            return null;
+        }
+        return userEntity.getFullName();
+    }
+
+    public static UserEntity get(String userId) {
+        return userMap.get(userId);
+    }
+
+    public synchronized static void add(UserEntity userEntity) {
+        String userId = userEntity.getUserId();
+        if (userId == null || userId.isEmpty()) {
+            return;
+        }
+        userMap.put(userId, userEntity);
+    }
+
+    public synchronized static void remove(String userId) {
+        userMap.remove(userId);
+    }
+
+    public synchronized static void load(String userId) {
+        userMap.clear();
+        try {
+            String body = FileUtil.readFromFile(FileUtil.getFriendIdMapFile(userId));
+            if (!body.isEmpty()) {
+                Map<String, UserEntity.UserDto> dtoMap = JsonUtil.parseObject(body, new TypeReference<Map<String, UserEntity.UserDto>>() {
+                });
+                for (UserEntity.UserDto dto : dtoMap.values()) {
+                    userMap.put(dto.getUserId(), dto.toEntity());
                 }
             }
+        } catch (Exception e) {
+            Log.printStackTrace(e);
         }
-        return idMap;
     }
 
-    public static List<String> getFriendIds() {
-        List<String> idList = new ArrayList<>();
-        for (Map.Entry<String, String> entry : getIdMap().entrySet()) {
-            if ("我".equals(entry.getValue()) || entry.getKey().equals(currentUid)) {
-                continue;
-            }
-            idList.add(entry.getKey());
-        }
-        return idList;
+    public synchronized static void unload() {
+        userMap.clear();
     }
 
-    public static void waitingCurrentUid() throws InterruptedException {
-        int count = 1;
-        while (getCurrentUid() == null || getCurrentUid().isEmpty()) {
-            if (count > 3) {
-                throw new InterruptedException("获取当前用户超时");
-            } else {
-                count++;
-                Thread.sleep(1000);
+    public synchronized static boolean save(String userId) {
+        return FileUtil.write2File(JsonUtil.toJsonString(userMap), FileUtil.getFriendIdMapFile(userId));
+    }
+
+    public synchronized static void loadSelf(String userId) {
+        userMap.clear();
+        try {
+            String body = FileUtil.readFromFile(FileUtil.getSelfIdFile(userId));
+            if (!body.isEmpty()) {
+                UserEntity.UserDto dto = JsonUtil.parseObject(body, new TypeReference<UserEntity.UserDto>() {
+                });
+                userMap.put(dto.getUserId(), dto.toEntity());
             }
+        } catch (Exception e) {
+            Log.printStackTrace(e);
         }
+    }
+
+    public synchronized static boolean saveSelf(UserEntity userEntity) {
+        return FileUtil.write2File(JsonUtil.toJsonString(userEntity), FileUtil.getSelfIdFile(userEntity.getUserId()));
     }
 
 }

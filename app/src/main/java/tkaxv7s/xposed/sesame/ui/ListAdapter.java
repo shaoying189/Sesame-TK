@@ -7,15 +7,12 @@ import android.view.ViewGroup;
 import android.widget.BaseAdapter;
 import android.widget.CheckBox;
 import android.widget.TextView;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-
 import tkaxv7s.xposed.sesame.R;
+import tkaxv7s.xposed.sesame.data.modelFieldExt.common.SelectModelFieldFunc;
 import tkaxv7s.xposed.sesame.entity.IdAndName;
 import tkaxv7s.xposed.sesame.util.Log;
+
+import java.util.*;
 
 public class ListAdapter extends BaseAdapter {
     private static ListAdapter adapter;
@@ -23,14 +20,20 @@ public class ListAdapter extends BaseAdapter {
     private static ListDialog.ListType listType;
 
     public static ListAdapter get(Context c) {
-        if (adapter == null)
+        if (adapter == null) {
             adapter = new ListAdapter(c);
+        }
+        return adapter;
+    }
+
+    public static ListAdapter getClear(Context c) {
+        ListAdapter adapter = get(c);
         adapter.findIndex = -1;
         adapter.findWord = null;
         return adapter;
     }
 
-    public static ListAdapter get(Context c, ListDialog.ListType listType) {
+    public static ListAdapter getClear(Context c, ListDialog.ListType listType) {
         if (adapter == null) {
             adapter = new ListAdapter(c);
             viewHolderList = new ArrayList<>();
@@ -43,9 +46,9 @@ public class ListAdapter extends BaseAdapter {
 
     Context context;
     List<? extends IdAndName> list;
-    Map<String, Integer> selectedMap;
+    SelectModelFieldFunc selectModelFieldFunc;
     int findIndex = -1;
-    CharSequence findWord = null;
+    String findWord = null;
 
     private ListAdapter(Context c) {
         context = c;
@@ -57,14 +60,14 @@ public class ListAdapter extends BaseAdapter {
         list = l;
     }
 
-    public void setSelectedList(Map<String, Integer> selectedMap) {
-        this.selectedMap = selectedMap;
+    public void setSelectedList(SelectModelFieldFunc selectModelFieldFunc) {
+        this.selectModelFieldFunc = selectModelFieldFunc;
         try {
             Collections.sort(list, (o1, o2) -> {
-                if (this.selectedMap.containsKey(o1.id) == this.selectedMap.containsKey(o2.id)) {
+                if (this.selectModelFieldFunc.contains(o1.id) == this.selectModelFieldFunc.contains(o2.id)) {
                     return o1.compareTo(o2);
                 }
-                return this.selectedMap.containsKey(o1.id) ? -1 : 1;
+                return this.selectModelFieldFunc.contains(o1.id) ? -1 : 1;
             });
         } catch (Throwable t) {
             Log.i("ListAdapter err");
@@ -72,46 +75,69 @@ public class ListAdapter extends BaseAdapter {
         }
     }
 
-    public int findLast(CharSequence cs) {
-        if (list == null || list.isEmpty())
+    public int findLast(String findThis) {
+        if (list == null || list.isEmpty()) {
             return -1;
-        if (!cs.equals(findWord)) {
-            findIndex = -1;
-            findWord = cs;
         }
-        int i = findIndex;
-        if (i < 0)
-            i = list.size();
+        findThis = findThis.toLowerCase();
+        if (!Objects.equals(findThis, findWord)) {
+            findIndex = -1;
+            findWord = findThis;
+        }
+        int start = findIndex;
+        int last = list.size() - 1;
+        if (start < 0) {
+            start = 0;
+        } else if (start > last) {
+            start = last;
+        }
+        int current = start;
         for (; ; ) {
-            i = (i + list.size() - 1) % list.size();
-            IdAndName ai = list.get(i);
-            if (ai.name.contains(cs)) {
-                findIndex = i;
+            current--;
+            if (current < 0) {
+                current = last;
+            }
+            if (list.get(current).name.toLowerCase().contains(findThis)) {
+                findIndex = current;
                 break;
             }
-            if (findIndex < 0 && i == 0)
+            if (current == start) {
                 break;
+            }
         }
         notifyDataSetChanged();
         return findIndex;
     }
 
-    public int findNext(CharSequence cs) {
-        if (list == null || list.isEmpty())
+    public int findNext(String findThis) {
+        if (list == null || list.isEmpty()) {
             return -1;
-        if (!cs.equals(findWord)) {
-            findIndex = -1;
-            findWord = cs;
         }
-        for (int i = findIndex; ; ) {
-            i = (i + 1) % list.size();
-            IdAndName ai = list.get(i);
-            if (ai.name.contains(cs)) {
-                findIndex = i;
+        findThis = findThis.toLowerCase();
+        if (!Objects.equals(findThis, findWord)) {
+            findIndex = -1;
+            findWord = findThis;
+        }
+        int start = findIndex;
+        int last = list.size() - 1;
+        if (start < 0) {
+            start = 0;
+        } else if (start > last) {
+            start = last;
+        }
+        int current = start;
+        for (; ; ) {
+            current++;
+            if (current > last) {
+                current = 0;
+            }
+            if (list.get(current).name.toLowerCase().contains(findThis)) {
+                findIndex = current;
                 break;
             }
-            if (findIndex < 0 && i == list.size() - 1)
+            if (current == start) {
                 break;
+            }
         }
         notifyDataSetChanged();
         return findIndex;
@@ -122,19 +148,19 @@ public class ListAdapter extends BaseAdapter {
     }
 
     public void selectAll() {
-        selectedMap.clear();
+        selectModelFieldFunc.clear();
         for (IdAndName ai : list) {
-            selectedMap.put(ai.id, 0);
+            selectModelFieldFunc.add(ai.id, 0);
         }
         notifyDataSetChanged();
     }
 
     public void SelectInvert() {
         for (IdAndName ai : list) {
-            if (!selectedMap.containsKey(ai.id)) {
-                selectedMap.put(ai.id, 0);
+            if (!selectModelFieldFunc.contains(ai.id)) {
+                selectModelFieldFunc.add(ai.id, 0);
             } else {
-                selectedMap.remove(ai.id);
+                selectModelFieldFunc.remove(ai.id);
             }
         }
         notifyDataSetChanged();
@@ -175,7 +201,7 @@ public class ListAdapter extends BaseAdapter {
         IdAndName ai = list.get(p1);
         vh.tv.setText(ai.name);
         vh.tv.setTextColor(findIndex == p1 ? Color.RED : Color.BLACK);
-        vh.cb.setChecked(selectedMap != null && selectedMap.containsKey(ai.id));
+        vh.cb.setChecked(selectModelFieldFunc != null && selectModelFieldFunc.contains(ai.id));
         return p2;
     }
 

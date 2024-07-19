@@ -1,18 +1,15 @@
 package tkaxv7s.xposed.sesame.data;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.databind.JsonMappingException;
+import lombok.Data;
+import tkaxv7s.xposed.sesame.data.task.ModelTask;
+import tkaxv7s.xposed.sesame.entity.UserEntity;
+import tkaxv7s.xposed.sesame.util.*;
 
 import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-
-import lombok.Data;
-import tkaxv7s.xposed.sesame.util.FileUtil;
-import tkaxv7s.xposed.sesame.util.JsonUtil;
-import tkaxv7s.xposed.sesame.util.Log;
-import tkaxv7s.xposed.sesame.util.UserIdMap;
 
 @Data
 public class ConfigV2 {
@@ -38,13 +35,13 @@ public class ConfigV2 {
             ModelFields configModelFields = modelConfig.getFields();
             ModelFields modelFields = newModels.get(modelCode);
             if (modelFields != null) {
-                for (ModelField configModelField : configModelFields.values()) {
-                    ModelField modelField = modelFields.get(configModelField.getCode());
+                for (ModelField<?> configModelField : configModelFields.values()) {
+                    ModelField<?> modelField = modelFields.get(configModelField.getCode());
                     try {
                         if (modelField != null) {
                             Object value = modelField.getValue();
                             if (value != null) {
-                                configModelField.setValue(value);
+                                configModelField.setObjectValue(value);
                             }
                         }
                     } catch (Exception e) {
@@ -53,35 +50,11 @@ public class ConfigV2 {
                     newModelFields.addField(configModelField);
                 }
             } else {
-                for (ModelField configModelField : configModelFields.values()) {
+                for (ModelField<?> configModelField : configModelFields.values()) {
                     newModelFields.addField(configModelField);
                 }
             }
             modelFieldsMap.put(modelCode, newModelFields);
-        }
-        for (Map.Entry<String, ModelFields> modelFieldsEntry : newModels.entrySet()) {
-            ModelFields newModelFields = modelFieldsEntry.getValue();
-            if (newModelFields != null) {
-                String modelCode = modelFieldsEntry.getKey();
-                ModelConfig modelConfig = modelConfigMap.get(modelCode);
-                if (modelConfig != null) {
-                    ModelFields configModelFields = modelConfig.getFields();
-                    for (Map.Entry<String, ModelField> modelFieldEntry : newModelFields.entrySet()) {
-                        ModelField modelField = modelFieldEntry.getValue();
-                        if (modelField != null) {
-                            ModelField configModelField = configModelFields.get(modelFieldEntry.getKey());
-                            if (configModelField != null) {
-                                try {
-                                    configModelField.setValue(modelField.getValue());
-                                } catch (Exception e) {
-                                    Log.printStackTrace(e);
-                                }
-                            }
-                        }
-                    }
-                    modelFieldsMap.put(modelCode, configModelFields);
-                }
-            }
         }
     }
 
@@ -139,58 +112,114 @@ public class ConfigV2 {
         return (T) getModelField(modelCode, fieldCode);
     }*/
 
-    public static Boolean isModify() {
+    public static Boolean isModify(String userId) {
         String json = null;
-        if (FileUtil.getConfigV2File(UserIdMap.getCurrentUid()).exists()) {
-            json = FileUtil.readFromFile(FileUtil.getConfigV2File(UserIdMap.getCurrentUid()));
+        File configV2File;
+        if (StringUtil.isEmpty(userId)) {
+            configV2File = FileUtil.getDefaultConfigV2File();
+        } else {
+            configV2File = FileUtil.getConfigV2File(userId);
+        }
+        if (configV2File.exists()) {
+            json = FileUtil.readFromFile(configV2File);
         }
         if (json != null) {
-            String formatted = JsonUtil.toJsonString(INSTANCE);
+            String formatted = toSaveStr();
             return formatted == null || !formatted.equals(json);
         }
         return true;
     }
 
-    public static Boolean save(Boolean force) {
+    public static Boolean save(String userId, Boolean force) {
         if (!force) {
-            if (!isModify()) {
+            if (!isModify(userId)) {
                 return true;
             }
         }
-        String json = JsonUtil.toJsonString(INSTANCE);
-        Log.system(TAG, "保存 config_v2.json: " + json);
-        return FileUtil.write2File(json, FileUtil.getConfigV2File());
+        String json = toSaveStr();
+        boolean success;
+        if (StringUtil.isEmpty(userId)) {
+            userId = "默认";
+            success = FileUtil.setDefaultConfigV2File(json);
+        } else {
+            success = FileUtil.setConfigV2File(userId, json);
+        }
+        Log.record("保存配置: " + userId);
+        return success;
     }
 
-    public static synchronized ConfigV2 load() {
+    public static synchronized ConfigV2 load(String userId) {
         Log.i(TAG, "开始加载配置");
-        ModelTask.initAllModel();
-        String json = null;
+        String userName = "";
+        File configV2File = null;
         try {
-            File configV2File = FileUtil.getConfigV2File(UserIdMap.getCurrentUid());
-            if (configV2File.exists()) {
-                json = FileUtil.readFromFile(configV2File);
+            if (StringUtil.isEmpty(userId)) {
+                configV2File = FileUtil.getDefaultConfigV2File();
+                userName = "默认";
+            } else {
+                configV2File = FileUtil.getConfigV2File(userId);
+                UserEntity userEntity = UserIdMap.get(userId);
+                if (userEntity == null) {
+                    userName = userId;
+                } else {
+                    userName = userEntity.getShowName();
+                }
             }
-            JsonUtil.MAPPER.readerForUpdating(INSTANCE).readValue(json);
+            Log.record("加载配置: " + userName);
+            if (configV2File.exists()) {
+                String json = FileUtil.readFromFile(configV2File);
+                JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
+                String formatted = toSaveStr();
+                if (formatted != null && !formatted.equals(json)) {
+                    Log.i(TAG, "格式化配置: " + userName);
+                    Log.system(TAG, "格式化配置: " + userName);
+                    FileUtil.write2File(formatted, configV2File);
+                }
+            } else {
+                File defaultConfigV2File = FileUtil.getDefaultConfigV2File();
+                if (defaultConfigV2File.exists()) {
+                    String json = FileUtil.readFromFile(defaultConfigV2File);
+                    JsonUtil.copyMapper().readerForUpdating(INSTANCE).readValue(json);
+                    Log.i(TAG, "复制新配置: " + userName);
+                    Log.system(TAG, "复制新配置: " + userName);
+                    FileUtil.write2File(json, configV2File);
+                } else {
+                    unload();
+                    Log.i(TAG, "初始新配置: " + userName);
+                    Log.system(TAG, "初始新配置: " + userName);
+                    FileUtil.write2File(toSaveStr(), configV2File);
+                }
+            }
         } catch (Throwable t) {
             Log.printStackTrace(TAG, t);
-            Log.i(TAG, "配置文件格式有误，已重置配置文件");
-            Log.system(TAG, "配置文件格式有误，已重置配置文件");
+            Log.i(TAG, "重置配置: " + userName);
+            Log.system(TAG, "重置配置: " + userName);
             try {
-                JsonUtil.MAPPER.updateValue(INSTANCE, new ConfigV2());
-            } catch (JsonMappingException e) {
+                unload();
+                if (configV2File != null) {
+                    FileUtil.write2File(toSaveStr(), configV2File);
+                }
+            } catch (Exception e) {
                 Log.printStackTrace(TAG, t);
             }
         }
-        String formatted = JsonUtil.toJsonString(INSTANCE);
-        if (formatted != null && !formatted.equals(json)) {
-            Log.i(TAG, "重新格式化 config_v2.json");
-            Log.system(TAG, "重新格式化 config_v2.json");
-            FileUtil.write2File(formatted, FileUtil.getConfigV2File());
-        }
         INSTANCE.setInit(true);
-        Log.i(TAG, "加载配置成功");
+        Log.i(TAG, "加载配置结束");
         return INSTANCE;
+    }
+
+    public static synchronized void unload() {
+        for (ModelFields modelFields : INSTANCE.modelFieldsMap.values()) {
+            for (ModelField<?> modelField : modelFields.values()) {
+                if (modelField != null) {
+                    modelField.reset();
+                }
+            }
+        }
+    }
+
+    public static String toSaveStr() {
+        return JsonUtil.toFormatJsonString(INSTANCE);
     }
 
 }

@@ -1,6 +1,6 @@
 package tkaxv7s.xposed.sesame.ui;
 
-import android.app.Activity;
+import android.annotation.SuppressLint;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
@@ -10,17 +10,17 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 import tkaxv7s.xposed.sesame.R;
-import tkaxv7s.xposed.sesame.data.ViewAppInfo;
 import tkaxv7s.xposed.sesame.util.FileUtil;
 import tkaxv7s.xposed.sesame.util.LanguageUtil;
 
 import java.io.File;
 
-public class HtmlViewerActivity extends Activity {
+public class HtmlViewerActivity extends BaseActivity {
     MyWebView mWebView;
     ProgressBar pgb;
     Uri uri;
@@ -37,24 +37,44 @@ public class HtmlViewerActivity extends Activity {
 
         mWebView.setWebChromeClient(
                 new WebChromeClient() {
+                    @SuppressLint("WrongConstant")
                     @Override
                     public void onProgressChanged(WebView view, int progress) {
                         pgb.setProgress(progress);
                         if (progress < 100) {
-                            setTitle("Loading...");
+                            setBaseSubtitle("Loading...");
                             pgb.setVisibility(View.VISIBLE);
                         } else {
-                            setTitle(mWebView.getTitle() + ViewAppInfo.getAppVersion());
+                            setBaseSubtitle(mWebView.getTitle());
                             pgb.setVisibility(View.GONE);
                         }
                     }
-                });
+                }
+        );
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
         Intent intent = getIntent();
-        uri = intent.getData();
-        if (uri != null) {
-            mWebView.loadUrl(uri.toString());
+        WebSettings settings = mWebView.getSettings();
+        if (intent != null) {
+            if (intent.getBooleanExtra("nextLine", true)) {
+                settings.setTextZoom(85);
+                settings.setUseWideViewPort(false);
+            } else {
+                settings.setTextZoom(100);
+                settings.setUseWideViewPort(true);
+            }
+            uri = intent.getData();
+            if (uri != null) {
+                mWebView.loadUrl(uri.toString());
+            }
+            canClear = intent.getBooleanExtra("canClear", false);
+            return;
         }
-        canClear = intent.getBooleanExtra("canClear", false);
+        settings.setTextZoom(100);
+        settings.setUseWideViewPort(true);
     }
 
     @Override

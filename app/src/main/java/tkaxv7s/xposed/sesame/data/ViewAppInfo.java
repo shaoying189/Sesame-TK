@@ -8,7 +8,6 @@ import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Bundle;
-
 import lombok.Getter;
 import lombok.Setter;
 import tkaxv7s.xposed.sesame.R;
@@ -26,27 +25,28 @@ public final class ViewAppInfo {
 
     @Setter
     @Getter
-    private static ModelType modelType = ModelType.DISABLE;
+    private static RunType runType = RunType.DISABLE;
 
     public static void init(Context context) {
-        ViewAppInfo.context = context;
-        appTitle = context.getString(R.string.app_name);
-        try {
-            PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
-            appVersion = " " + packageInfo.versionName;
-            appTitle += appVersion;
-        } catch (PackageManager.NameNotFoundException ignored) {
+        if (ViewAppInfo.context == null) {
+            ViewAppInfo.context = context;
+            appTitle = context.getString(R.string.app_name);
+            try {
+                PackageInfo packageInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
+                appVersion = packageInfo.versionName;
+                appTitle = appTitle + " " + appVersion;
+            } catch (PackageManager.NameNotFoundException ignored) {
+            }
         }
-        checkModleType();
     }
 
-    public static ModelType checkModleType() {
-        if (modelType != null) {
-            return modelType;
+    public static RunType checkRunType() {
+        if (runType != null) {
+            return runType;
         }
         try {
             if (context == null) {
-                return modelType = ModelType.DISABLE;
+                return runType = RunType.DISABLE;
             }
             ContentResolver contentResolver = context.getContentResolver();
             Uri uri = Uri.parse("content://me.weishu.exposed.CP/");
@@ -60,7 +60,7 @@ public final class ViewAppInfo {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     context.startActivity(intent);
                 } catch (Throwable e1) {
-                    return modelType = ModelType.DISABLE;
+                    return runType = RunType.DISABLE;
                 }
             }
             if (result == null) {
@@ -68,23 +68,23 @@ public final class ViewAppInfo {
             }
 
             if (result == null) {
-                return modelType = ModelType.DISABLE;
+                return runType = RunType.DISABLE;
             }
             if (result.getBoolean("active", false)) {
-                return modelType = ModelType.MODEL;
+                return runType = RunType.MODEL;
             }
-            return modelType = ModelType.DISABLE;
+            return runType = RunType.DISABLE;
         } catch (Throwable ignored) {
         }
-        return modelType = ModelType.DISABLE;
+        return runType = RunType.DISABLE;
     }
 
-    public static void setModelTypeByCode(Integer modelTypeCode) {
-        ModelType newModelType = ModelType.getByCode(modelTypeCode);
-        if (newModelType == null) {
-            newModelType = ModelType.DISABLE;
+    public static void setRunTypeByCode(Integer runTypeCode) {
+        RunType newRunType = RunType.getByCode(runTypeCode);
+        if (newRunType == null) {
+            newRunType = RunType.DISABLE;
         }
-        ViewAppInfo.modelType = newModelType;
+        ViewAppInfo.runType = newRunType;
     }
 
     /**

@@ -1,7 +1,12 @@
 package tkaxv7s.xposed.sesame.util;
 
+import android.annotation.SuppressLint;
+
 import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
 
 /**
  * @author Constanline
@@ -9,11 +14,17 @@ import java.util.Calendar;
  */
 public class TimeUtil {
 
-    public static final DateFormat DATE_FORMAT = DateFormat.getDateInstance();
-    public static final DateFormat TIME_FORMAT = DateFormat.getTimeInstance();
-
     public static Boolean checkNowInTimeRange(String timeRange) {
         return checkInTimeRange(System.currentTimeMillis(), timeRange);
+    }
+
+    public static Boolean checkInTimeRange(Long timeMillis, List<String> timeRangeList) {
+        for (String timeRange : timeRangeList) {
+            if (checkInTimeRange(timeMillis, timeRange)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static Boolean checkInTimeRange(Long timeMillis, String timeRange) {
@@ -93,31 +104,43 @@ public class TimeUtil {
     }
 
     public static Calendar getTodayCalendarByTimeStr(String timeStr) {
-        return getCalendarByTimeStr(null, timeStr);
+        return getCalendarByTimeStr((Long) null, timeStr);
     }
 
     public static Calendar getCalendarByTimeStr(Long timeMillis, String timeStr) {
         try {
             Calendar timeCalendar = getCalendarByTimeMillis(timeMillis);
-            timeCalendar.set(Calendar.MILLISECOND, 0);
+            return getCalendarByTimeStr(timeCalendar, timeStr);
+        } catch (Exception e) {
+            Log.printStackTrace(e);
+        }
+        return null;
+    }
+
+    public static Calendar getCalendarByTimeStr(Calendar timeCalendar, String timeStr) {
+        try {
             int length = timeStr.length();
             switch (length) {
                 case 6:
                     timeCalendar.set(Calendar.SECOND, Integer.parseInt(timeStr.substring(4)));
                     timeCalendar.set(Calendar.MINUTE, Integer.parseInt(timeStr.substring(2, 4)));
                     timeCalendar.set(Calendar.HOUR_OF_DAY, Integer.parseInt(timeStr.substring(0, 2)));
-                    return timeCalendar;
+                    break;
                 case 4:
                     timeCalendar.set(Calendar.SECOND, 0);
                     timeCalendar.set(Calendar.MINUTE, Integer.parseInt(timeStr.substring(2, 4)));
                     timeCalendar.set(Calendar.HOUR_OF_DAY, Integer.parseInt(timeStr.substring(0, 2)));
-                    return timeCalendar;
+                    break;
                 case 2:
                     timeCalendar.set(Calendar.SECOND, 0);
                     timeCalendar.set(Calendar.MINUTE, 0);
                     timeCalendar.set(Calendar.HOUR_OF_DAY, Integer.parseInt(timeStr.substring(0, 2)));
-                    return timeCalendar;
+                    break;
+                default:
+                    return null;
             }
+            timeCalendar.set(Calendar.MILLISECOND, 0);
+            return timeCalendar;
         } catch (Exception e) {
             Log.printStackTrace(e);
         }
@@ -133,7 +156,7 @@ public class TimeUtil {
     }
 
     public static String getTimeStr(long ts) {
-        return TIME_FORMAT.format(new java.util.Date(ts));
+        return DateFormat.getTimeInstance().format(new java.util.Date(ts));
     }
 
     public static String getDateStr() {
@@ -145,7 +168,7 @@ public class TimeUtil {
         if (plusDay != 0) {
             c.add(Calendar.DATE, plusDay);
         }
-        return DATE_FORMAT.format(c.getTime());
+        return DateFormat.getDateInstance().format(c.getTime());
     }
 
     public static Calendar getToday() {
@@ -157,12 +180,62 @@ public class TimeUtil {
         return c;
     }
 
+    public static Calendar getNow() {
+        return Calendar.getInstance();
+    }
+
     public static void sleep(long millis) {
         try {
             Thread.sleep(millis);
-        } catch (Exception e) {
-            Log.i("sleep error:");
-            Log.printStackTrace(e);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
         }
     }
+
+    /**
+     * 获取指定时间的周数
+     * @param dateTime 时间
+     * @return 当前年的第几周
+     */
+    public static int getWeekNumber(Date dateTime) {
+        Calendar calendar = Calendar.getInstance();
+        calendar.setTime(dateTime);
+        // 设置周的第一天为周一
+        calendar.setFirstDayOfWeek(Calendar.MONDAY);
+        return calendar.get(Calendar.WEEK_OF_YEAR);
+    }
+
+    /**
+     * 比较第一个时间戳的天数是否小于第二个时间戳的天数
+     * @param firstdTimestamp 第一个时间戳
+     * @param secondTimestamp 第二个时间戳
+     * @return boolean 如果小于，则为true，否则为false
+     */
+    public static boolean isLessThanSecondOfDays(Long firstdTimestamp, Long secondTimestamp) {
+        final long gmt8 = 8 * 60 * 60 * 1000;
+        final long day = 24 * 60 * 60 * 1000;
+        firstdTimestamp = firstdTimestamp + gmt8;
+        secondTimestamp = secondTimestamp + gmt8;
+        return firstdTimestamp / day < secondTimestamp / day;
+    }
+
+    /**
+     * 通过时间戳比较传入的时间戳的天数是否小于当前时间戳的天数
+     * @param timestamp 时间戳
+     * @return boolean 如果小于当前时间戳所计算的天数，则为true，否则为false
+     */
+    public static boolean isLessThanNowOfDays(Long timestamp) {
+        return isLessThanSecondOfDays(timestamp, System.currentTimeMillis());
+    }
+
+    @SuppressLint("SimpleDateFormat")
+    public static DateFormat getCommonDateFormat() {
+        return new SimpleDateFormat("dd日HH:mm:ss");
+    }
+
+    @SuppressLint("SimpleDateFormat")
+    public static String getCommonDate(Long timestamp) {
+        return getCommonDateFormat().format(timestamp);
+    }
+
 }
